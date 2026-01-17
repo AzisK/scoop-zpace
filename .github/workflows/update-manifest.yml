@@ -1,0 +1,46 @@
+name: Update Manifest
+
+on:
+  repository_dispatch:
+    types: [update-manifest]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update to (leave empty to fetch latest from PyPI)'
+        required: false
+
+jobs:
+  update:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ github.event.client_payload.version }}" ]; then
+            VERSION="${{ github.event.client_payload.version }}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(curl -s https://pypi.org/pypi/zpace/json | jq -r '.info.version')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update manifest
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          
+          # Update version in manifest using jq
+          jq --arg v "$VERSION" '.version = $v' bucket/zpace.json > bucket/zpace.json.tmp
+          mv bucket/zpace.json.tmp bucket/zpace.json
+          
+          echo "Updated to version ${VERSION}"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/zpace.json
+          git diff --cached --quiet || git commit -m "Update zpace to ${{ steps.version.outputs.version }}"
+          git push
